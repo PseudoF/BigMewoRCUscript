@@ -1,7 +1,8 @@
-return function(ctx)
-local Window = ctx.Window
-local Library = ctx.Library
 
+
+return function(ctx)
+    local Library = ctx.Library
+    local Window = ctx.Window
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/bigbeanscripts/Pet-Warriors/refs/heads/main/test"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
 loadstring(game:HttpGet("https://raw.githubusercontent.com/SenhorLDS/ProjectLDSHUB/refs/heads/main/Anti%20AFK"))()
@@ -21,7 +22,7 @@ local DataController, EggController, TreeController, HatchingController, AuraCon
 
 local Functions, Util, Values, seasonVariables, seasonUtils, seasonTiersList
 
-local Window, Tabs, EggDropdown, HatchAmount, LuckyEgg, AutoHatch, HideAnimationToggle,
+local Tabs, EggDropdown, HatchAmount, LuckyEgg, AutoHatch, HideAnimationToggle,
     SelectTreesDropdown, AutoCutTreesToggle, lowercooldown, BypassStrength, AutoEquip, UpgradeAxe,
     explorerroom, ActivateLeversSection, ClaimSection, AncientWheel, ClanWheel, AncientMerchantSection, PassSection,
     Aura, EventSection, AutoCraftBuildings, autoCraftDropdown
@@ -52,8 +53,8 @@ spawn(function()
     end
 end)
 
-BuildUI = function()
 
+BuildUI = function()
     -- Function to check if player is in dungeon
     local function isInDungeon()
         local success, result = pcall(function()
@@ -62,12 +63,9 @@ BuildUI = function()
         end)
         return success and result or false
     end
-
     AutoCritDamageSection = Tabs.Dunegon:AddSection("Auto Crit/Damage")
-
     local autoCriticalTapEnabled = false
     local inDungeon = false
-
     -- Check dungeon status every 5 seconds
     task.spawn(function()
         while true do
@@ -75,23 +73,6 @@ BuildUI = function()
                 inDungeon = isInDungeon()
             end
             task.wait(5)
-        end
-    end)
-
-
-    task.spawn(function()
-        local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
-        local DungeonController = Knit.GetController("DungeonController")
-        
-        -- Store original spawnBoss function
-        local originalSpawnBoss = DungeonController.spawnBoss
-        
-        -- Override with error-safe version
-        DungeonController.spawnBoss = function(...)
-            local success, err = pcall(originalSpawnBoss, ...)
-            if not success then
-                -- Silently catch the error - boss will spawn on next attempt
-            end
         end
     end)
 
@@ -829,9 +810,12 @@ task.spawn(function()
     Util = require(ReplicatedStorage.Shared.Util)
     Values = require(ReplicatedStorage.Shared.Values)   
 
+
     Tabs = {
         Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
         Dunegon = Window:AddTab({ Title = "Dungeon", Icon = "phosphor-shield-checkered-bold" }),
     }
 
+    BuildUI()
+end)
 end
