@@ -1752,34 +1752,12 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     table.insert(threads, task.spawn(function()
                                         local DungeonService = Knit.GetService("DungeonService")
                                         
-                                        local function leaveDungeonSafe()
-                                            local leaveMethods = {"leaveDungeon", "exitDungeon", "leave", "quitDungeon"}
-                                            for _, methodName in ipairs(leaveMethods) do
-                                                local method = DungeonService[methodName]
-                                                if typeof(method) == "function" then
-                                                    local ok = pcall(function()
-                                                        method(DungeonService)
-                                                    end)
-                                                    if ok then
-                                                        return true
-                                                    end
-                                                end
-                                            end
-                                            return false
-                                        end
-                                        
                                         while tick() < nextCheckTime and seasonQuestEnabled do
                                             pcall(function()
                                                 -- Fire dungeon start with gamemode 1 (1 ticket)
                                                 DungeonService:startDungeon(1)
                                             end)
-                                            
-                                            task.wait(5)
-                                            pcall(function()
-                                                leaveDungeonSafe()
-                                            end)
-                                            
-                                            task.wait(1.5)
+                                            task.wait(3) -- Wait 3 seconds before next attempt
                                         end
                                     end))
 
