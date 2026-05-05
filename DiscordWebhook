@@ -1,0 +1,440 @@
+local Library = loadstring(game:HttpGetAsync("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/bigbeanscripts/Pet-Warriors/refs/heads/main/test"))()
+local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/SenhorLDS/ProjectLDSHUB/refs/heads/main/Anti%20AFK"))()
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local LocalPlayer = Players.LocalPlayer
+
+local requestFunc = (syn and syn.request) or (http and http.request) or request
+if not requestFunc then
+    return
+end
+
+local Knit
+local EggService
+local PetRarities, PetsModule, TiersList, EggsModule
+
+local Window, Tabs
+local BuildUI
+
+spawn(function()
+    while wait(30) do 
+        pcall(function() collectgarbage("collect") end)
+    end
+end)
+
+BuildUI = function()
+    local WebhookTab = Tabs.Webhook
+    
+    local WEBHOOK_URL = ""
+    local DISCORD_USER_ID = ""
+    local selectedRarities = {}
+    local showRobloxUser = false
+    local showPetImage = true
+    local webhookEnabled = false
+    local userid = LocalPlayer.UserId
+    local username = LocalPlayer.Name
+    
+    local gameName = "Unknown Game"
+    pcall(function() gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name end)
+
+    local thumbCache = {}
+    local webhookQueue = {}
+    local isProcessingQueue = false
+
+    local function formatNumber(num)
+        local suffixes = {
+            {1e63, "Vg"}, {1e60, "Ng"}, {1e57, "Og"}, {1e54, "Sg"}, {1e51, "Se"},
+            {1e48, "Qi"}, {1e45, "Qa"}, {1e42, "Tg"}, {1e39, "Vg"}, {1e36, "UDe"},
+            {1e33, "De"}, {1e30, "No"}, {1e27, "Oc"}, {1e24, "Sp"}, {1e21, "Sx"},
+            {1e18, "Qn"}, {1e15, "Qd"}, {1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"}
+        }
+        for _, data in ipairs(suffixes) do
+            if num >= data[1] then
+                return string.format("%.2f%s", num / data[1], data[2]):gsub("%.00", "")
+            end
+        end
+        return tostring(math.floor(num))
+    end
+
+    local function getRarityColor(rarity)
+        for _, rarityData in ipairs(PetRarities) do
+            if rarityData.name == rarity and rarityData.textColor and rarityData.textColor.gradient then
+                local keypoints = rarityData.textColor.gradient.Keypoints
+                if #keypoints > 0 then
+                    local color3 = keypoints[1].Value
+                    return math.floor(color3.R * 255) * 65536 + math.floor(color3.G * 255) * 256 + math.floor(color3.B * 255)
+                end
+            end
+        end
+        return 0xFFFFFF
+    end
+
+    local function getPetChance(eggName, petName)
+        local eggData = EggsModule[eggName]
+        
+        if not eggData then
+            for _, data in pairs(EggsModule) do
+                if data.pets and data.pets[petName] then
+                    eggData = data
+                    break
+                end
+            end
+        end
+
+        if eggData and eggData.pets and eggData.pets[petName] then
+            local petWeight = eggData.pets[petName]
+            local totalWeight = 0
+            for _, w in pairs(eggData.pets) do
+                totalWeight = totalWeight + w
+            end
+            
+            local percentage = (petWeight / totalWeight) * 100
+            
+            if percentage < 0.0001 then return string.format("%.8f%%", percentage)
+            elseif percentage < 1 then return string.format("%.4f%%", percentage)
+            else return string.format("%.2f%%", percentage) end
+        end
+        return "Unknown"
+    end
+
+    local function fetchThumbnail(assetId)
+        if thumbCache[assetId] then return thumbCache[assetId] end
+        task.wait(0.05) 
+        local success, response = pcall(function()
+            return requestFunc({
+                Url = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. assetId .. "&returnPolicy=PlaceHolder&size=420x420&format=Png&isCircular=false",
+                Method = "GET",
+                Headers = { ["accept"] = "application/json" }
+            })
+        end)
+        if success and response and response.Body then
+            local decodeOk, data = pcall(HttpService.JSONDecode, HttpService, response.Body)
+            if decodeOk and data.data and data.data[1] then
+                local url = data.data[1].imageUrl
+                thumbCache[assetId] = url
+                return url
+            end
+        end
+        return nil
+    end
+
+    local function processQueue()
+        if isProcessingQueue then return end
+        isProcessingQueue = true
+
+        task.spawn(function()
+            while #webhookQueue > 0 do
+                local embedsToSend = {}
+                local currentBatch = {}
+                local pingMessage = ""
+                
+                if DISCORD_USER_ID ~= "" then
+                    pingMessage = string.format("<@%s>", DISCORD_USER_ID)
+                end
+
+                for i = 1, 10 do
+                    if #webhookQueue == 0 then break end
+                    table.insert(currentBatch, table.remove(webhookQueue, 1))
+                end
+
+                for _, petData in ipairs(currentBatch) do
+                    local thumbUrl = nil
+                    
+                    if showPetImage and petData.assetId then
+                        thumbUrl = fetchThumbnail(petData.assetId)
+                    end
+                    
+                    local playerValue = showRobloxUser and string.format("%s ||(%s)||", username, userid) or "Anonymous"
+                    local fields = {}
+
+                    if thumbUrl then
+                        -- LAYOUT 1: Image ON (Replicating Screenshot Logic)
+                        fields = {
+                            { name = "Player", value = playerValue, inline = false },
+                            { name = "Pet Name", value = petData.baseName, inline = false },
+                            -- Row 3
+                            { name = "Type", value = petData.typeName, inline = true },
+                            { name = "Shiny", value = petData.isShiny and "Yes" or "No", inline = true },
+                            { name = "Rarity", value = petData.rarity, inline = true },
+                            -- Row 4
+                            { name = "Chance", value = petData.chance, inline = true },
+                            { name = "Multiplier", value = petData.multiplier, inline = true }
+                        }
+                    else
+                        -- LAYOUT 2: Image OFF (Wider Grid Layout)
+                        fields = {
+                            { name = "Player", value = playerValue, inline = true },
+                            { name = "Pet Name", value = petData.baseName, inline = true },
+                            { name = "Rarity", value = petData.rarity, inline = true },
+                            -- Row 2
+                            { name = "Type", value = petData.typeName, inline = true },
+                            { name = "Shiny", value = petData.isShiny and "Yes" or "No", inline = true },
+                            { name = "Chance", value = petData.chance, inline = true },
+                            { name = "Multiplier", value = petData.multiplier, inline = true }
+                        }
+                    end
+
+                    local embed = {
+                        title = "Pet Hatched",
+                        color = getRarityColor(petData.rarity),
+                        fields = fields,
+                        footer = {
+                            text = "RCU Logger • " .. os.date("%I:%M %p")
+                        }
+                    }
+
+                    if thumbUrl then
+                        embed.thumbnail = { url = thumbUrl }
+                    end
+                    
+                    table.insert(embedsToSend, embed)
+                end
+
+                if #embedsToSend > 0 and WEBHOOK_URL ~= "" then
+                    pcall(function()
+                        requestFunc({
+                            Url = WEBHOOK_URL,
+                            Method = "POST",
+                            Headers = { ["Content-Type"] = "application/json" },
+                            Body = HttpService:JSONEncode({ 
+                                content = pingMessage,
+                                embeds = embedsToSend 
+                            })
+                        })
+                    end)
+                end
+                task.wait(1)
+            end
+            isProcessingQueue = false
+        end)
+    end
+
+    local InfoSection = WebhookTab:AddSection("Information")
+    
+    InfoSection:AddParagraph("WebhookInfo", {
+        Title = "📖 How to Use",
+        Content = "\n1️⃣ Get your webhook URL from Discord:\n   Server Settings → Integrations → Webhooks → New Webhook\n\n2️⃣ Get your Discord User ID:\n   Enable Developer Mode → Right-click your name → Copy ID\n\n3️⃣ Configure settings below\n\n4️⃣ Click 'Test Webhook' to verify it works\n\n5️⃣ Enable the webhook toggles for what you want to track",
+        TitleAlignment = "Left"
+    })
+
+    InfoSection:AddParagraph("Note", {
+        Title = "⚠️ Important",
+        Content = "When you have 'show pet image' enabled, you will temporairily freeze when you hatch a pet that you haven't already hatched with the webhook on. This will only be for a few seconds, but if this annoys you, you can turn the images off. \n\n If you don't want to be pinged every time you hatch a pet, leave the Discord User ID empty.",
+        TitleAlignment = "Left"
+    })
+
+    local SettingsSection = WebhookTab:AddSection("Configuration")
+
+    SettingsSection:AddInput("WebhookURL", {
+        Title = "Webhook URL",
+        Default = WEBHOOK_URL,
+        Callback = function(value) WEBHOOK_URL = value end
+    })
+
+    SettingsSection:AddInput("DiscordUserID", {
+        Title = "Discord User ID",
+        Default = DISCORD_USER_ID,
+        Callback = function(value) DISCORD_USER_ID = value end
+    })
+
+    SettingsSection:AddToggle("ShowRobloxUser", {
+        Title = "Show Roblox User",
+        Description = "Shows your username in the embed",
+        Default = false,
+        Callback = function(Value) showRobloxUser = Value end
+    })
+
+    SettingsSection:AddToggle("ShowPetImage", {
+        Title = "Show Pet Image",
+        Description = "Include the pet thumbnail in the webhook",
+        Default = true,
+        Callback = function(Value) showPetImage = Value end
+    })
+
+    SettingsSection:AddButton({
+        Title = "Test Webhook",
+        Description = "Sends a test message",
+        Callback = function()
+            if WEBHOOK_URL == "" then 
+                Library:Notify({Title = "Error", Content = "Please enter a Webhook URL first.", Duration = 3})
+                return 
+            end
+
+            local pingMessage = ""
+            if DISCORD_USER_ID ~= "" then
+                pingMessage = string.format("<@%s>", DISCORD_USER_ID)
+            end
+
+            local playerValue = showRobloxUser and string.format("```%s (%s)```", username, userid) or "```Anonymous```"
+
+            local testEmbed = {
+                title = "🔔 Webhook Connected",
+                description = "Your settings are correct. The logger is ready!",
+                color = 0x00FF00,
+                fields = {
+                    { name = "Player", value = playerValue, inline = false },
+                    { name = "Game", value = gameName or "Unknown", inline = true },
+                    { name = "Executor", value = identifyexecutor and identifyexecutor() or "Unknown", inline = true }
+                },
+                footer = { text = "RCU by Ducky (Gemini😅)" },
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
+            }
+
+            task.spawn(function()
+                local success = pcall(function()
+                    requestFunc({
+                        Url = WEBHOOK_URL,
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = HttpService:JSONEncode({ content = pingMessage, embeds = {testEmbed} })
+                    })
+                end)
+                if success then
+                    Library:Notify({Title = "Success", Content = "Test sent to Discord!", Duration = 3})
+                else
+                    Library:Notify({Title = "Error", Content = "Failed to send.", Duration = 5})
+                end
+            end)
+        end
+    })
+
+    local PetSection = WebhookTab:AddSection("Pet Settings")
+
+    local function getRarityList()
+        local list = {}
+        for _, r in ipairs(PetRarities) do
+            if r.name then table.insert(list, r.name) end
+        end
+        return list
+    end
+
+    PetSection:Dropdown("WebhookRarities", {
+        Title = "Select Rarities to Track",
+        Values = getRarityList(),
+        Multi = true,
+        Searchable = true,
+        Default = {},
+        Callback = function(val)
+            selectedRarities = {}
+            for k, v in pairs(val) do if v then selectedRarities[k] = true end end
+        end
+    })
+
+    PetSection:AddToggle("EnableWebhook", {
+        Title = "Enable Webhook",
+        Default = false,
+        Callback = function(Value)
+            webhookEnabled = Value
+        end
+    })
+
+    if EggService then
+        EggService.openEgg:Connect(function(eggName, petTable) 
+            if not webhookEnabled then return end
+            
+            local actualPets = petTable
+            local actualEggName = eggName
+            
+            if type(eggName) == "table" then
+                actualPets = eggName
+                actualEggName = "Unknown"
+            end
+            
+            if type(actualPets) ~= "table" then return end
+
+            task.spawn(function()
+                for _, petData in ipairs(actualPets) do
+                    local name = petData.nm
+                    local tier = petData.ti or 1
+                    local shiny = petData.sh
+
+                    local basePet = PetsModule[name]
+                    if basePet then
+                        local rarity = basePet.rarity
+
+                        if selectedRarities[rarity] then
+                            local multiplier = basePet.multiplier or 0
+                            local tierMultiplier = math.max(1, tier * 2 - 2)
+                            local shinyMultiplier = shiny and 1.5 or 1
+                            local totalMultiplier = multiplier * tierMultiplier * shinyMultiplier
+                            local formattedMult = "x" .. formatNumber(totalMultiplier)
+
+                            local typeName = "Normal"
+                            if tier > 1 and TiersList[tier] then
+                                typeName = TiersList[tier].name
+                            end
+                            
+                            local chanceStr = getPetChance(actualEggName, name)
+
+                            local assetId = nil
+                            if basePet.images and basePet.images[tier] then
+                                assetId = tostring(basePet.images[tier]):match("%d+")
+                            end
+
+                            table.insert(webhookQueue, {
+                                baseName = name,    
+                                typeName = typeName,
+                                isShiny = shiny,   
+                                rarity = rarity,
+                                multiplier = formattedMult,
+                                chance = chanceStr,
+                                assetId = assetId
+                            })
+                        end
+                    end
+                end
+                processQueue()
+            end)
+        end)
+    end
+
+    SaveManager:SetLibrary(Library)
+    InterfaceManager:SetLibrary(Library)
+    SaveManager:IgnoreThemeSettings()
+    SaveManager:SetIgnoreIndexes{}
+    InterfaceManager:SetFolder("FluentScriptHub")
+    SaveManager:SetFolder("FluentScriptHub/RCUWebhook")
+    InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+    SaveManager:BuildConfigSection(Tabs.Settings)
+    Window:SelectTab(1)
+    SaveManager:LoadAutoloadConfig()
+end
+
+task.spawn(function()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+
+    Knit = require(ReplicatedStorage.Packages.Knit)
+    Knit.OnStart():await()
+    
+    EggService = Knit.GetService("EggService")
+
+    pcall(function()
+        PetRarities = require(ReplicatedStorage.Shared.List.Pets.Rarities)
+        PetsModule = require(ReplicatedStorage.Shared.List.Pets.Pets)
+        TiersList = require(ReplicatedStorage.Shared.List.Pets.Tiers)
+        EggsModule = require(ReplicatedStorage.Shared.List.Pets.Eggs)
+    end)
+
+    Window = Library:Window{
+        Title = "RCU Webhook",
+        SubTitle = "By Ducky (Gemini😅)",
+        TabWidth = 160,
+        Size = UDim2.fromOffset(580, 500),
+        Resize = false,
+        Acrylic = true,
+        Theme = "Vynixu",
+        MinimizeKey = Enum.KeyCode.LeftShift
+    }
+
+    Tabs = {
+        Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+        Webhook = Window:AddTab({ Title = "Webhook", Icon = "phosphor-discord-logo" })
+    }
+
+    BuildUI()
+end)
