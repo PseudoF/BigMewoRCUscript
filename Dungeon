@@ -1,0 +1,847 @@
+
+
+local Library = loadstring(game:HttpGetAsync("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/bigbeanscripts/Pet-Warriors/refs/heads/main/test"))()
+local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/SenhorLDS/ProjectLDSHUB/refs/heads/main/Anti%20AFK"))()
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
+local LocalPlayer = Players.LocalPlayer
+
+local Knit
+local ClickService, EggService, RebirthService, TreeService, AxeService, InventoryService,
+    PetService, RewardService, UpgradeService, SeasonService, AuraService, EventService,
+    OrbService, FarmService, BuildingService, ClanService, LumberjackService
+local DataController, EggController, TreeController, HatchingController, AuraController,
+    MapController, OrbController, ItemController, SoundController, FarmController, BuildingController
+
+local Functions, Util, Values, seasonVariables, seasonUtils, seasonTiersList
+
+local Window, Tabs, EggDropdown, HatchAmount, LuckyEgg, AutoHatch, HideAnimationToggle,
+    SelectTreesDropdown, AutoCutTreesToggle, lowercooldown, BypassStrength, AutoEquip, UpgradeAxe,
+    explorerroom, ActivateLeversSection, ClaimSection, AncientWheel, ClanWheel, AncientMerchantSection, PassSection,
+    Aura, EventSection, AutoCraftBuildings, autoCraftDropdown
+
+local selectedEgg, selectedAmount, useLuckyEggs, selectedTrees, autoBreakRunning, isAutoEquipAxeEnabled,
+    isAutoUpgradeEnabled, originalSelectedObjects, originalAutoCutState, treeToggleThread, petDisplayToId,
+    angelQuestToggle, allowedDiceDropdown, originalEggSelection, originalHatchAmount, originalTreeSelection,
+    originalAutoCutState, originalAutoHatchState, angelQuestEnabled, isAutoCollectEnabled, autoClaimThread, pickupStarsThread,
+    autoClaimAllChestsThread, originalIsInGroup, supplyDropThread, isAutoSpinEnabled, isAutoSpinEnabled1, isAutoBuyEnabled,
+    autoSteampunkToggles, isAutoCraftEnabled, originalAutoCraftSettings, autoCraftDropdown, autoCraftBuildingMap,
+    ResourceStatusParagraph, selectedDiceItems, autoRollThread, isAuraHidden, originalAuraFuncs, isAutoBreakingMeteors
+
+local BuildUI, getUnlockedRebirthOptions, GetBestRebirthOption, updateRebirthDropdown, performRebirth,
+    TerminateThread, CreateThread, formatNumber, getLuckyIdForEggName, getTreeTypes, mapWoodToTreeWorld,
+    getLumberId, getActiveTreesInGroup, updateAxeUpgradeStatus, manageTreeToggleCycle, getAllNonWoodRequirements,
+    getAllFarms, getAllFarmsWithOptions, getAllFarmsForClaim, isFarmReady, getPlayerPetOptions,
+    updatePetStatusParagraph, updateAngelQuestStatus, getAllAuraDice, getCurrentQuestType, findBestPotion,
+    getAvailableAuraDice, setupForQuestType, storeOriginalSettings, restoreOriginalSettings, getAllSmoothies,
+    getAllMagicPotItems, getAllWoods, canCraftToday, getAllMaps, getAllLumberjackItems, canAffordUpgrade,
+    isLumberjackAtWork, getAllUpgradeItems, hasActiveBoost, getUnbuiltBuildings, canAffordBuilding,
+    getPrerequisiteChain, getMissingResources, updateResourceStatus, mapWoodToTreeWorldForCraft, claimChestsInUnlockedMaps,
+    createClaimToggle, getAllAncientMerchantItems, updateDiceStatus, storeAuraFuncs, hideAuraAnims, restoreAuraAnims
+
+spawn(function()
+    while wait(30) do 
+        pcall(function() collectgarbage("collect") end)
+        gcinfo()
+    end
+end)
+
+BuildUI = function()
+
+    -- Function to check if player is in dungeon
+    local function isInDungeon()
+        local success, result = pcall(function()
+            local DungeonController = Knit.GetController("DungeonController")
+            return DungeonController:isInDungeon()
+        end)
+        return success and result or false
+    end
+
+    AutoCritDamageSection = Tabs.Dunegon:AddSection("Auto Crit/Damage")
+
+    local autoCriticalTapEnabled = false
+    local inDungeon = false
+
+    -- Check dungeon status every 5 seconds
+    task.spawn(function()
+        while true do
+            if autoCriticalTapEnabled then
+                inDungeon = isInDungeon()
+            end
+            task.wait(5)
+        end
+    end)
+
+
+    task.spawn(function()
+        local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+        local DungeonController = Knit.GetController("DungeonController")
+        
+        -- Store original spawnBoss function
+        local originalSpawnBoss = DungeonController.spawnBoss
+        
+        -- Override with error-safe version
+        DungeonController.spawnBoss = function(...)
+            local success, err = pcall(originalSpawnBoss, ...)
+            if not success then
+                -- Silently catch the error - boss will spawn on next attempt
+            end
+        end
+    end)
+
+    AutoCritDamageSection:Toggle("AutoCriticalTap", {
+        Title = "Auto Critical Tap",
+        Description = "Game patched the old method (still works, but muchhhhh slower).",
+        Default = false,
+        Callback = function(Value)
+            autoCriticalTapEnabled = Value
+            if Value then
+                inDungeon = isInDungeon() 
+                task.spawn(function()
+                    while autoCriticalTapEnabled do
+                        if inDungeon then
+                            local dungeonBosses = CollectionService:GetTagged("dungeonBoss")
+                            if #dungeonBosses > 0 then
+                                pcall(function()
+                                    DungeonService.damage._re:FireServer()
+                                    DungeonService.criticalTap._re:FireServer()
+                                end)
+                            end
+                        end
+                        task.wait(0.15)
+                    end
+                end)
+            end
+        end
+    })
+
+    AutoPickupPowerups = Tabs.Dunegon:AddSection("Auto Use Powerups")
+
+    AutoPickupPowerups:Toggle("AutoPickupPowerups", {
+        Title = "Auto Pickup Powerups",
+        Description = "Automatically picks up all available dungeon powerups.",
+        Default = false,
+        Callback = function(Value)
+            autoPickupEnabled = Value
+            if Value then
+                task.spawn(function()
+                    local Powerups = require(ReplicatedStorage.Shared.List.Dungeon.Powerups)
+
+                    -- Precompute lowercase module keys for case-insensitive comparison
+                    local moduleKeys = {}
+                    for key, _ in pairs(Powerups) do
+                        moduleKeys[key:lower()] = key
+                    end
+
+                    while autoPickupEnabled do
+                        if isInDungeon() then
+                            local character = LocalPlayer.Character
+                            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+                            if rootPart then
+                                local debrisFolder = workspace:FindFirstChild("Debris")
+                                if debrisFolder then
+                                    for _, child in ipairs(debrisFolder:GetChildren()) do
+                                        local childKey = child.Name:gsub("%s",""):lower()
+                                        if moduleKeys[childKey] then
+                                            local touchFired = false
+                                            -- Loop through all parts of this powerup to find TouchInterest
+                                            for _, part in ipairs(child:GetChildren()) do
+                                                local touch = part:FindFirstChild("TouchInterest")
+                                                if touch then
+                                                    pcall(function()
+                                                        firetouchinterest(rootPart, part, 0)
+                                                        firetouchinterest(rootPart, part, 1)
+                                                    end)
+                                                    touchFired = true
+                                                    task.wait(0.25)
+                                                    break -- fire only once per powerup
+                                                end
+                                            end
+                                            -- If TouchInterest is directly on the parent
+                                            if not touchFired then
+                                                local touch = child:FindFirstChild("TouchInterest")
+                                                if touch then
+                                                    pcall(function()
+                                                        firetouchinterest(rootPart, child, 0)
+                                                        firetouchinterest(rootPart, child, 1)
+                                                    end)
+                                                    task.wait(0.25)
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        task.wait(3)
+                    end
+                end)
+            end
+        end
+    })
+
+    EquipBest = Tabs.Dunegon:AddSection("Equip Best Pets")
+        
+    local equipBestPetsEnabled = false
+
+    EquipBest:Toggle("EquipBestDungeonPets", {
+        Title = "Equip Best Dungeon Pets",
+        Description = "Automatically equips the best dungeon pets and removes weaker ones. Checks every 5 seconds.",
+        Default = false,
+        Callback = function(Value)
+            equipBestPetsEnabled = Value
+            if Value then
+                task.spawn(function()
+                    while equipBestPetsEnabled do
+                        pcall(function()
+                            local itemUtils = require(ReplicatedStorage.Shared.Util).itemUtils
+                            local data = DataController:getData()
+                            if not data then return end
+                            
+                            -- Get max equippable pets from label
+                            local label = game:GetService("Players").LocalPlayer.PlayerGui.MainUI.Menus.DungeonJoinFrame.Main.Default.YourTeamLabel
+                            local text = label.Text -- e.g., "Your Team 7/10"
+                            local maxEquippable = tonumber(string.match(text, "%d+/%d+"):match("/(%d+)"))
+                            
+                            -- Get all dungeon pets and sort by multiplier
+                            local dungeonPets = {}
+                            if data.inventory.pet then
+                                for petId, _ in pairs(data.inventory.pet) do
+                                    local pet = itemUtils.getItemFromId(data, petId)
+                                    if pet and pet:getSpecialMultiplierName() == "dungeonDamage" then
+                                        table.insert(dungeonPets, {
+                                            id = petId,
+                                            multiplier = pet:getSpecialMultiplierAmount(),
+                                            amount = pet:getAmount()
+                                        })
+                                    end
+                                end
+                            end
+                            
+                            -- Sort by multiplier (highest first)
+                            table.sort(dungeonPets, function(a, b)
+                                return a.multiplier > b.multiplier
+                            end)
+                            
+                            -- Get best pets to equip
+                            local bestPetsToEquip = {}
+                            local totalPetsToEquip = 0
+                            for _, petData in ipairs(dungeonPets) do
+                                if totalPetsToEquip < maxEquippable then
+                                    local petsToEquip = math.min(petData.amount, maxEquippable - totalPetsToEquip)
+                                    if petsToEquip > 0 then
+                                        bestPetsToEquip[petData.id] = petsToEquip
+                                        totalPetsToEquip = totalPetsToEquip + petsToEquip
+                                    end
+                                end
+                            end
+                            
+                            -- Remove pets that shouldn't be equipped
+                            if data.dungeonTeam then
+                                for equippedPetId, equippedAmount in pairs(data.dungeonTeam) do
+                                    local shouldKeep = bestPetsToEquip[equippedPetId]
+                                    local correctAmount = shouldKeep and bestPetsToEquip[equippedPetId] or 0
+                                    
+                                    if not shouldKeep or equippedAmount > correctAmount then
+                                        local removeAmount = equippedAmount - correctAmount
+                                        for i = 1, removeAmount do
+                                            DungeonService:removePetFromTeam(equippedPetId)
+                                            task.wait(0.1)
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            -- Add best pets that aren't equipped or need more
+                            for petId, targetAmount in pairs(bestPetsToEquip) do
+                                local currentEquipped = (data.dungeonTeam and data.dungeonTeam[petId]) or 0
+                                local needToAdd = targetAmount - currentEquipped
+                                
+                                for i = 1, needToAdd do
+                                    DungeonService:addPetToTeam(petId)
+                                    task.wait(0.1)
+                                end
+                            end
+                        end)
+                        
+                        task.wait(5) -- Check every 5 seconds
+                    end
+                end)
+            end
+        end
+    })
+
+    local DungeonAutoJoinSection = Tabs.Dunegon:AddSection("Auto Join Dungeon")
+
+    -- Status element to show dungeon tickets
+    local ticketStatus = DungeonAutoJoinSection:AddParagraph("Dungeon",{
+        Title = "Dungeon Tickets",
+        Content = "Checking..."
+    })
+
+    -- Function to update ticket status
+    local function updateTicketStatus()
+        pcall(function()
+            local data = DataController:getData()
+            local dungeonTicketItem = require(ReplicatedStorage.Shared.Util).itemUtils.getItemFromName(data, "dungeonTicket")
+            
+            if dungeonTicketItem and dungeonTicketItem:getAmount() > 0 then
+                ticketStatus:SetValue("Dungeon Tickets: " .. dungeonTicketItem:getAmount())
+            else
+                ticketStatus:SetValue("No Dungeon Tickets")
+            end
+        end)
+    end
+
+    -- Update tickets every 5 seconds
+    task.spawn(function()
+        while true do
+            updateTicketStatus()
+            task.wait(5)
+        end
+    end)
+
+    -- Get dungeon gamemodes for dropdown
+    local DungeonGamemodes = require(ReplicatedStorage.Shared.List.Dungeon.DungeonGamemodes)
+    local gamemodeOptions = {}
+    for i, gamemode in ipairs(DungeonGamemodes) do
+        table.insert(gamemodeOptions, string.format("%d. %s (%d tickets)", i, gamemode.name, gamemode.price))
+    end
+
+    -- Dropdown for gamemode selection
+    local selectedGamemode = 1
+    local gamemodeDropdown = DungeonAutoJoinSection:Dropdown("GamemodeSelect", {
+        Title = "Select Dungeon Mode",
+        Values = gamemodeOptions,
+        Multi = false,
+        Default = 1,
+        Callback = function(Value)
+            -- Extract the number from the selected option
+            local gamemodeNumber = string.match(Value, "^(%d+)")
+            selectedGamemode = tonumber(gamemodeNumber) or 1
+        end
+    })
+
+    -- Auto join toggle
+    local autoJoinEnabled = false
+    DungeonAutoJoinSection:Toggle("AutoJoinDungeon", {
+        Title = "Auto Join Dungeon",
+        Description = "Automatically joins the selected dungeon gamemode. The game has no bosses in level 101, so if the script's aren't doing anything, it's because you will need to wait out the timer.",
+        Default = false,
+        Callback = function(Value)
+            autoJoinEnabled = Value
+            if Value then
+                task.spawn(function()
+                    -- Instant check when toggle is enabled
+                    if not isInDungeon() then
+                        pcall(function()
+                            DungeonService:startDungeon(selectedGamemode)
+                        end)
+                        task.wait(3) 
+                    else
+                        task.wait(3)
+                    end
+                    
+                    while autoJoinEnabled do
+                        if not isInDungeon() then
+                            pcall(function()
+                                DungeonService:startDungeon(selectedGamemode)
+                            end)
+                            task.wait(3) 
+                        else
+                            task.wait(3) 
+                        end
+                    end
+                end)
+            end
+        end
+    })
+
+    local DungeonUISection = Tabs.Dunegon:AddSection("Misc")
+
+    local isHUDOverrideEnabled = false
+    local isStopScreenShakeEnabled = false
+    local originalHideHUD = nil
+    local originalShakeScreen = nil
+    local originalCriticalTap = nil
+
+    DungeonUISection:Toggle("KeepHUDVisible", {
+        Title = "Keep HUD Visible",
+        Description = "Prevents the dungeon from hiding your HUD. This must be on before entering a dungeon to work.",
+        Default = false,
+        Callback = function(enabled)
+            isHUDOverrideEnabled = enabled
+            local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+            local UIController = Knit.GetController("UIController")
+            if enabled then
+                if not originalHideHUD then
+                    originalHideHUD = UIController.hideHUD
+                end
+                UIController.hideHUD = function(self, hide, exceptions)
+                    originalHideHUD(self, false, {["bottom"] = true})
+                end
+            else
+                if originalHideHUD then
+                    UIController.hideHUD = originalHideHUD
+                end
+            end
+        end
+    })
+
+    DungeonUISection:Toggle("StopScreenShakes", {
+        Title = "Stop Screen Shakes",
+        Description = "Prevents dungeon screen shakes and critical tap effects.",
+        Default = false,
+        Callback = function(enabled)
+            isStopScreenShakeEnabled = enabled
+            local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+            local DC = Knit.GetController("DungeonController")
+            if enabled then
+                if not originalShakeScreen then
+                    originalShakeScreen = DC.shakeScreen
+                end
+                if not originalCriticalTap then
+                    originalCriticalTap = DC.criticalTap
+                end
+                DC.shakeScreen = function() end
+                DC.criticalTap = function() end
+            else
+                if originalShakeScreen then
+                    DC.shakeScreen = originalShakeScreen
+                end
+                if originalCriticalTap then
+                    DC.criticalTap = originalCriticalTap
+                end
+            end
+        end
+    })
+    
+    local isPreventTeleportEnabled = false
+    local originalTeleportFromRoom = nil
+
+    DungeonUISection:Toggle("PreventTeleport", {
+        Title = "Prevent Teleport",
+        Description = "Prevents teleporting when the dungeon ends. DO NOT use this unless you are using the Auto Join Dungeon toggle, or you will be stuck.",
+        Default = false,
+        Callback = function(enabled)
+            isPreventTeleportEnabled = enabled
+            local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+            local DC = Knit.GetController("DungeonController")
+            if enabled then
+                if not originalTeleportFromRoom then
+                    originalTeleportFromRoom = DC.teleportFromRoom
+                end
+                DC.teleportFromRoom = function()
+                end
+            else
+                if originalTeleportFromRoom then
+                    DC.teleportFromRoom = originalTeleportFromRoom
+                end
+            end
+        end
+    })
+local isNoPetsEnabled = false
+    -- We define originalCreatePets outside to persist state
+    local originalCreatePets = nil 
+
+    DungeonUISection:Toggle("NoDungeonPets", {
+        Title = "Visually Remove Dungeon Pets",
+        Description = "Prevents pets from visually spawning (FPS Boost). Must be enabled before entering.",
+        Default = false,
+        Callback = function(enabled)
+            isNoPetsEnabled = enabled
+            local DC = Knit.GetController("DungeonController")
+
+            if enabled then
+                if not originalCreatePets and tostring(DC.createPets) ~= tostring(function() end) then
+                    originalCreatePets = DC.createPets
+                end
+
+                DC.createPets = function(self) 
+                    return nil 
+                end
+            else
+                if originalCreatePets then 
+                    DC.createPets = originalCreatePets 
+                    originalCreatePets = nil
+                end
+            end
+        end
+    })
+
+    local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+    local DC = Knit.GetController("DungeonController")
+    local CollectionService = game:GetService("CollectionService")
+
+    -- 1. Fix "invalid argument to random" (Powerups)
+    local oldGetPowerupPosition = DC.getPowerupPosition
+    DC.getPowerupPosition = function(self)
+        local spawns = CollectionService:GetTagged("DungeonPowerupSpawn")
+        -- If there are no spawn points, return a dummy position to stop the crash
+        if #spawns == 0 then
+            return CFrame.new(0, -1000, 0) 
+        end
+        return oldGetPowerupPosition(self)
+    end
+
+    -- 2. Fix "Infinite yield" (Boss Spawn)
+    local oldSpawnBoss = DC.spawnBoss
+    DC.spawnBoss = function(self)
+        local room = self:getDungeonRoom()
+        -- Only try to spawn the boss if the room and the spawn point actually exist
+        if room and room:FindFirstChild("BossSpawn") then
+            return oldSpawnBoss(self)
+        end
+    end
+
+    DungeonMerchant = Tabs.Dunegon:AddSection("Dungeon Shop")
+
+    -- Get all dungeon shop items
+    local function getAllDungeonShopItems()
+        local options = {}
+        local itemMap = {}
+        
+        pcall(function()
+            local DungeonShop = require(ReplicatedStorage.Shared.List.Dungeon.Shop)
+            
+            for i, shopItem in ipairs(DungeonShop) do
+                local item = shopItem.item
+                local price = shopItem.price
+                
+                -- Get item name and amount using proper methods
+                local itemName = "Unknown Item"
+                local itemAmount = 1
+                
+                pcall(function()
+                    -- Use the proper methods to get name and amount
+                    if item.getName then
+                        itemName = item:getName()
+                    elseif item.getRealName then
+                        itemName = item:getRealName()
+                    end
+                    
+                    -- Get the amount using the proper method
+                    if item.getAmount then
+                        itemAmount = item:getAmount()
+                    end
+                end)
+                
+                -- Format display name with amount if greater than 1
+                local displayName
+                if itemAmount > 1 then
+                    displayName = string.format("%dx %s - %s coins", itemAmount, itemName, Functions.suffixes(price))
+                else
+                    displayName = string.format("%s - %s coins", itemName, Functions.suffixes(price))
+                end
+                
+                table.insert(options, displayName)
+                itemMap[displayName] = {
+                    item = item,
+                    price = price,
+                    index = i,
+                    amount = itemAmount,
+                    itemName = itemName  -- Store the actual name for comparison
+                }
+            end
+        end)
+        
+        return options, itemMap
+    end
+
+    local dungeonShopOptions, dungeonShopItemMap = getAllDungeonShopItems()
+    local selectedShopItems = {}
+
+    -- Dropdown for selecting items
+    local shopItemDropdown = DungeonMerchant:Dropdown("SelectShopItems", {
+        Title = "Select Items to Auto Buy",
+        Values = dungeonShopOptions,
+        Multi = true,
+        Searchable = true,
+        Default = {},
+        Callback = function(value)
+            selectedShopItems = value
+        end
+    })
+
+
+    DungeonMerchant:Button({
+    Title = "Select All",
+    Description = "Selects all dungeon shop items.",
+    Callback = function()
+        local allSelected = {}
+        for _, optionName in ipairs(dungeonShopOptions) do
+            allSelected[optionName] = true
+        end
+        shopItemDropdown:SetValue(allSelected)
+        selectedShopItems = allSelected
+    end})
+
+    -- Auto buy toggle
+    local autoBuyShopEnabled = false
+    DungeonMerchant:Toggle("AutoBuyShopItems", {
+        Title = "Auto Buy Selected Items",
+        Description = "Automatically buys selected items when they appear in the dungeon shop",
+        Default = false,
+        Callback = function(Value)
+            autoBuyShopEnabled = Value
+            if Value then
+                task.spawn(function()
+                    while autoBuyShopEnabled do
+                        if next(selectedShopItems) then
+                            pcall(function()
+                                local DungeonShop = require(ReplicatedStorage.Shared.List.Dungeon.Shop)
+                                local playerData = DataController:getData()
+                                if not playerData then return end
+                                
+                                -- Get current dungeon coins
+                                local dungeonCoins = playerData.dungeonCoins or 0
+                                
+                                -- Get current shop hour for seed generation
+                                local timeData = DateTime.fromUnixTimestamp(Knit.serverTimeNow + 3600):ToUniversalTime()
+                                
+                                -- Check each shop slot (1-3)
+                                for slot = 1, 3 do
+                                    local seed = timeData.Year * 222 + timeData.Month * 333 + timeData.Day * 444444 + timeData.Hour * 33333 + LocalPlayer.UserId + slot
+                                    local shopItem = DungeonShop[Functions.getRandom(DungeonShop, seed)]
+                                    
+                                    if shopItem then
+                                        local item = shopItem.item
+                                        local price = shopItem.price
+                                        
+                                        -- Check if already bought
+                                        local boughtKey = string.format("%d", seed)
+                                        local isBought = playerData.dungeonShopBought[boughtKey] or false
+                                        
+                                        if not isBought and dungeonCoins >= price then
+                                            -- Get item name using proper methods
+                                            local itemName = "Unknown Item"
+                                            local itemAmount = 1
+                                            
+                                            pcall(function()
+                                                if item.getName then
+                                                    itemName = item:getName()
+                                                elseif item.getRealName then
+                                                    itemName = item:getRealName()
+                                                end
+                                                
+                                                if item.getAmount then
+                                                    itemAmount = item:getAmount()
+                                                end
+                                            end)
+                                            
+                                            -- Check if this item is selected for auto buy
+                                            for displayName, isSelected in pairs(selectedShopItems) do
+                                                if isSelected and dungeonShopItemMap[displayName] then
+                                                    local selectedItem = dungeonShopItemMap[displayName]
+                                                    
+                                                    -- Compare item names, amounts, and prices
+                                                    if itemName == selectedItem.itemName and 
+                                                    itemAmount == selectedItem.amount and 
+                                                    price == selectedItem.price then
+                                                        DungeonService:buyShop(slot)
+                                                        task.wait(1)
+                                                        break
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                        task.wait(5) -- Check every 5 seconds
+                    end
+                end)
+            end
+        end
+    })
+
+
+    DungeonUpgrades = Tabs.Dunegon:AddSection("Auto Buy Upgrades")
+
+    -- Get all dungeon upgrades for dropdown
+    local function getAllDungeonUpgrades()
+        local options = {}
+        local upgradeMap = {}
+        
+        pcall(function()
+            local DungeonUpgrades = require(ReplicatedStorage.Shared.List.Dungeon.Upgrades)
+            
+            for upgradeId, upgradeData in pairs(DungeonUpgrades) do
+                local displayName = Functions.toPascal(upgradeId)
+                table.insert(options, displayName)
+                upgradeMap[displayName] = upgradeId
+            end
+        end)
+        
+        table.sort(options)
+        return options, upgradeMap
+    end
+
+    local dungeonUpgradeOptions, dungeonUpgradeMap = getAllDungeonUpgrades()
+    local selectedDungeonUpgrades = {}
+
+    -- Dropdown for selecting upgrades
+    local dungeonUpgradeDropdown = DungeonUpgrades:Dropdown("SelectDungeonUpgrades", {
+        Title = "Select Upgrades to Auto Buy",
+        Values = dungeonUpgradeOptions,
+        Multi = true,
+        Searchable = true,
+        Default = {},
+        Callback = function(value)
+            selectedDungeonUpgrades = value
+        end
+    })
+
+    -- Auto upgrade toggle
+    local autoDungeonUpgradeEnabled = false
+    DungeonUpgrades:Toggle("AutoUpgrade", {
+        Title = "Auto Upgrade",
+        Description = "Automatically buys selected dungeon upgrades when you can afford them",
+        Default = false,
+        Callback = function(Value)
+            autoDungeonUpgradeEnabled = Value
+            if Value then
+                task.spawn(function()
+                    while autoDungeonUpgradeEnabled do
+                        if next(selectedDungeonUpgrades) then
+                            local upgradesBought = 0
+                            
+                            pcall(function()
+                                local playerData = DataController:getData()
+                                if not playerData then return end
+                                
+                                local DungeonUpgradesModule = require(ReplicatedStorage.Shared.List.Dungeon.Upgrades)
+                                local dungeonCoins = playerData.dungeonCoins or 0
+                                
+                                -- Check each selected upgrade
+                                for displayName, isSelected in pairs(selectedDungeonUpgrades) do
+                                    if isSelected and dungeonUpgradeMap[displayName] then
+                                        local upgradeId = dungeonUpgradeMap[displayName]
+                                        local upgradeData = DungeonUpgradesModule[upgradeId]
+                                        
+                                        if upgradeData then
+                                            local currentLevel = playerData.dungeonUpgrades[upgradeId] or 0
+                                            local nextLevel = currentLevel + 1
+                                            
+                                            -- Check if there's a next level available
+                                            if upgradeData.upgrades[nextLevel] then
+                                                local upgradeCost = upgradeData.upgrades[nextLevel].cost or 0
+                                                
+                                                -- Check if player can afford it
+                                                if dungeonCoins >= upgradeCost then
+                                                    -- Convert to lowercase for service call
+                                                    local lowercaseUpgradeId = upgradeId:sub(1,1):lower() .. upgradeId:sub(2)
+                                                    DungeonService:upgrade(lowercaseUpgradeId)
+                                                    
+                                                    upgradesBought = upgradesBought + 1
+                                                    dungeonCoins = dungeonCoins - upgradeCost -- Update local coins count
+                                                    
+                                                    task.wait(0.25) -- 0.25 second delay between purchases
+                                                    
+                                                    -- Update player data for next iteration
+                                                    playerData = DataController:getData()
+                                                    if playerData then
+                                                        dungeonCoins = playerData.dungeonCoins or 0
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                        
+                        task.wait(3) -- Check every 3 seconds
+                    end
+                end)
+            end
+        end
+    })
+
+
+    SaveManager:SetLibrary(Library)
+    InterfaceManager:SetLibrary(Library)
+    SaveManager:IgnoreThemeSettings()
+    SaveManager:SetIgnoreIndexes{}
+    InterfaceManager:SetFolder("FluentScriptHub")
+    SaveManager:SetFolder("FluentScriptHub/RCU-Dungeon")
+
+    InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+    SaveManager:BuildConfigSection(Tabs.Settings)
+
+    Window:SelectTab(1)
+    SaveManager:LoadAutoloadConfig()
+end
+
+task.spawn(function()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+
+    Knit = require(ReplicatedStorage.Packages.Knit)
+    Knit.OnStart():await()
+
+    ClickService = Knit.GetService("ClickService")
+    EggService = Knit.GetService("EggService")
+    DungeonService = Knit.GetService("DungeonService")
+    
+    DataController = Knit.GetController("DataController")
+
+    Functions = require(ReplicatedStorage.Shared.Functions)
+
+     pcall(function()
+        local DC = Knit.GetController("DungeonController")
+        
+        -- Fix Powerup Random Error
+        if DC and not DC._fixedPowerups then
+            local oldGetPowerupPosition = DC.getPowerupPosition
+            DC.getPowerupPosition = function(self)
+                local spawns = CollectionService:GetTagged("DungeonPowerupSpawn")
+                if #spawns == 0 then return CFrame.new(0, -1000, 0) end
+                return oldGetPowerupPosition(self)
+            end
+            DC._fixedPowerups = true
+        end
+
+        -- Fix Boss Infinite Yield Error
+        if DC and not DC._fixedBossSpawn then
+            local oldSpawnBoss = DC.spawnBoss
+            DC.spawnBoss = function(self)
+                local room = self:getDungeonRoom()
+                if room and room:FindFirstChild("BossSpawn") then
+                    return oldSpawnBoss(self)
+                end
+            end
+            DC._fixedBossSpawn = true
+        end
+        print("✅ Dungeon Crash Fixes Applied")
+    end)
+
+    seasonVariables = require(ReplicatedStorage.Shared.Variables)
+    seasonUtils = require(ReplicatedStorage.Shared.Util)
+    seasonTiersList = require(ReplicatedStorage.Shared.List[("Season%*"):format(seasonVariables.season)].Tiers)
+    Util = require(ReplicatedStorage.Shared.Util)
+    Values = require(ReplicatedStorage.Shared.Values)   
+
+    Window = Library:Window{
+        Title = "RCU Dungeon",
+        SubTitle = "By Duckie",
+        TabWidth = 160,
+        Size =  UDim2.fromOffset(580, 460),
+        Resize = false,
+        Theme = "Darker",
+        MinimizeKey = Enum.KeyCode.LeftShift
+    }
+
+    Tabs = {
+        Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+        Dunegon = Window:AddTab({ Title = "Dungeon", Icon = "phosphor-shield-checkered-bold" }),
+    }
+
+    BuildUI()
+end)
