@@ -630,6 +630,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                             
                             -- Only proceed if we have selected quests
                             if #selectedQuests == 0 then
+                                _G.CurrentResourceQuest = nil
                                 return
                             end
                             
@@ -643,6 +644,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                             end
                             
                             if #questsToProcess == 0 then
+                                _G.CurrentResourceQuest = nil
                                 return
                             end
                             
@@ -674,6 +676,15 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 else
                                     table.insert(otherQuests, quest)
                                 end
+                            end
+
+                            -- Reset stale resource quest when it is no longer active/incomplete
+                            if _G.CurrentResourceQuest == "tree" and not treeQuest then
+                                _G.CurrentResourceQuest = nil
+                            elseif _G.CurrentResourceQuest == "fish" and not fishQuest then
+                                _G.CurrentResourceQuest = nil
+                            elseif _G.CurrentResourceQuest == "ore" and not oreQuest then
+                                _G.CurrentResourceQuest = nil
                             end
 
                             local threads = {}
@@ -761,7 +772,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                         if _G.CurrentResourceQuest == "tree" and treeQuest then
                             table.insert(threads, task.spawn(function()
                                 local treesToCut = {"spawn", "desert", "nuclear"}
-                                while seasonQuestEnabled and _G.CurrentResourceQuest == "tree" do
+                                while tick() < nextCheckTime and seasonQuestEnabled and _G.CurrentResourceQuest == "tree" do
                                     pcall(function()
                                         -- Equip axe if not equipped
                                         local playerData = DataController:getData()
@@ -1029,7 +1040,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
 
                                     -- Teleport to mine every 20 seconds in a separate thread
                                     table.insert(threads, task.spawn(function()
-                                        while seasonQuestEnabled and _G.CurrentResourceQuest == "ore" do
+                                        while tick() < nextCheckTime and seasonQuestEnabled and _G.CurrentResourceQuest == "ore" do
                                             pcall(function()
                                                 local Maps = require(ReplicatedStorage.Shared.List.Maps)
                                                 local targetMachine = "Space Mine"
@@ -2580,19 +2591,6 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
             end
         end
     })
-
-    task.spawn(function()
-        while true do
-            if seasonQuestEnabled then
-                CompleteQuests:SetValue(false)
-                task.wait(0.5)
-                CompleteQuests:SetValue(true)
-                task.wait(0.5)
-                CompleteQuests:SetValue(true)
-            end
-            task.wait(20)
-        end
-    end)
 
     -- Settings tab
     SaveManager:SetLibrary(Library)
