@@ -552,6 +552,11 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
     local questCompletionThread = nil
     local fishRodInventoryId = nil
     local lastFishEquipAt = 0
+    local resourceWatchdog = {
+        fish = {lastProgress = nil, lastChangeAt = 0},
+        ore = {lastProgress = nil, lastChangeAt = 0},
+    }
+    local lastResourceRotateAt = 0
 
     local CompleteQuests = CompleteQuestsSection:Toggle("AutoCompleteSeasonQuests", {
         Title = "Auto Complete Quests",
@@ -680,6 +685,43 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 end
                             end
 
+                            local now = tick()
+
+                            -- Watchdog: if fish/ore progress stalls too long, force resource reset
+                            if fishQuest then
+                                local fishProgress = fishQuest.data and fishQuest.data.progress or 0
+                                if resourceWatchdog.fish.lastProgress == nil or fishProgress > resourceWatchdog.fish.lastProgress then
+                                    resourceWatchdog.fish.lastProgress = fishProgress
+                                    resourceWatchdog.fish.lastChangeAt = now
+                                elseif resourceWatchdog.fish.lastChangeAt > 0 and (now - resourceWatchdog.fish.lastChangeAt) > 120 then
+                                    if _G.CurrentResourceQuest == "fish" then
+                                        warn("[SeasonQuests] fish stalled >120s, forcing quest rotation")
+                                        _G.CurrentResourceQuest = nil
+                                    end
+                                    resourceWatchdog.fish.lastChangeAt = now
+                                end
+                            else
+                                resourceWatchdog.fish.lastProgress = nil
+                                resourceWatchdog.fish.lastChangeAt = 0
+                            end
+
+                            if oreQuest then
+                                local oreProgress = oreQuest.data and oreQuest.data.progress or 0
+                                if resourceWatchdog.ore.lastProgress == nil or oreProgress > resourceWatchdog.ore.lastProgress then
+                                    resourceWatchdog.ore.lastProgress = oreProgress
+                                    resourceWatchdog.ore.lastChangeAt = now
+                                elseif resourceWatchdog.ore.lastChangeAt > 0 and (now - resourceWatchdog.ore.lastChangeAt) > 120 then
+                                    if _G.CurrentResourceQuest == "ore" then
+                                        warn("[SeasonQuests] ore stalled >120s, forcing quest rotation")
+                                        _G.CurrentResourceQuest = nil
+                                    end
+                                    resourceWatchdog.ore.lastChangeAt = now
+                                end
+                            else
+                                resourceWatchdog.ore.lastProgress = nil
+                                resourceWatchdog.ore.lastChangeAt = 0
+                            end
+
                             -- Reset stale resource quest when it is no longer active/incomplete
                             if _G.CurrentResourceQuest == "tree" and not treeQuest then
                                 _G.CurrentResourceQuest = nil
@@ -775,6 +817,17 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 _G.CurrentResourceQuest = "fish"
                             elseif oreQuest then
                                 _G.CurrentResourceQuest = "ore"
+                            end
+                        end
+
+                        -- Fair rotation to avoid starving fish/ore over long sessions
+                        if fishQuest and oreQuest and _G.CurrentResourceQuest and (tick() - lastResourceRotateAt > 45) then
+                            if _G.CurrentResourceQuest == "fish" then
+                                _G.CurrentResourceQuest = "ore"
+                                lastResourceRotateAt = tick()
+                            elseif _G.CurrentResourceQuest == "ore" then
+                                _G.CurrentResourceQuest = "fish"
+                                lastResourceRotateAt = tick()
                             end
                         end
 
