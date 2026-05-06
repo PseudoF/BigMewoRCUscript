@@ -689,6 +689,24 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 _G.CurrentResourceQuest = nil
                             end
 
+                            -- If tree quest is no longer active, force-unequip axe so ore/fish can take over cleanly
+                            if not treeQuest then
+                                pcall(function()
+                                    local playerData = DataController:getData()
+                                    if playerData and playerData.isAxeEquipped and playerData.inventory and playerData.inventory.exclusive then
+                                        for itemId, itemData in pairs(playerData.inventory.exclusive) do
+                                            local itemObj = Util.itemUtils.createItemFromData(itemData)
+                                            local itemName = itemObj:getName()
+                                            if itemName:lower():find("axe") and not itemName:lower():find("pickaxe") then
+                                                InventoryService:useItem(itemId, {use = 1})
+                                                task.wait(0.3)
+                                                break
+                                            end
+                                        end
+                                    end
+                                end)
+                            end
+
                             local threads = {}
 
                             if eggQuest and _G.CurrentResourceQuest ~= "tree" then
@@ -937,6 +955,27 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     
                                     -- Smart equip: only if not equipped and with cooldown to prevent flicker
                                     if (not playerData.isFishingRodEquipped) and (tick() - lastFishEquipAt > 3) then
+                                        -- Unequip conflicting tool first (axe/pickaxe), then equip rod
+                                        if playerData.isAxeEquipped or playerData.isPickaxeEquipped then
+                                            local currentEquippedIndex = nil
+                                            for itemId, itemData in pairs(playerData.inventory.exclusive) do
+                                                local itemObj = Util.itemUtils.createItemFromData(itemData)
+                                                local itemName = itemObj:getName()
+                                                if playerData.isAxeEquipped and itemName:lower():find("axe") and not itemName:lower():find("pickaxe") then
+                                                    currentEquippedIndex = itemId
+                                                    break
+                                                end
+                                                if playerData.isPickaxeEquipped and itemName:lower():find("pickaxe") then
+                                                    currentEquippedIndex = itemId
+                                                    break
+                                                end
+                                            end
+                                            if currentEquippedIndex then
+                                                InventoryService:useItem(currentEquippedIndex, {use = 1})
+                                                task.wait(0.25)
+                                            end
+                                        end
+
                                         InventoryService:useItem(fishRodInventoryId, {use=1})
                                         lastFishEquipAt = tick()
                                         task.wait(0.35)
