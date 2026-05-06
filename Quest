@@ -550,6 +550,8 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
     -- Auto Complete Season Quests Toggle
     local seasonQuestEnabled = false
     local questCompletionThread = nil
+    local fishRodInventoryId = nil
+    local lastFishEquipAt = 0
 
     local CompleteQuests = CompleteQuestsSection:Toggle("AutoCompleteSeasonQuests", {
         Title = "Auto Complete Quests",
@@ -918,29 +920,49 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     local playerData = DataController:getData()
                                     if not playerData or not playerData.inventory or not playerData.inventory.exclusive then return end
                                     
-                                    local rodInventoryId = nil
-                                    for itemId, itemData in pairs(playerData.inventory.exclusive) do
-                                        local itemObj = Util.itemUtils.createItemFromData(itemData)
-                                        local itemName = itemObj:getName()
-                                        
-                                        -- Check if it's a fishing rod
-                                        if itemName:lower():find("fishingrod") or itemName:lower():find("rod") then
-                                            rodInventoryId = itemId
-                                            break
+                                    if not fishRodInventoryId then
+                                        for itemId, itemData in pairs(playerData.inventory.exclusive) do
+                                            local itemObj = Util.itemUtils.createItemFromData(itemData)
+                                            local itemName = itemObj:getName()
+                                            
+                                            -- Check if it's a fishing rod
+                                            if itemName:lower():find("fishingrod") or itemName:lower():find("rod") then
+                                                fishRodInventoryId = itemId
+                                                break
+                                            end
                                         end
                                     end
                                     
-                                    if not rodInventoryId then return end
+                                    if not fishRodInventoryId then return end
                                     
-                                    -- Always (re)equip rod at the start of each cycle to self-heal
-                                    InventoryService:useItem(rodInventoryId, {use=1})
-                                    task.wait(0.35)
+                                    -- Smart equip: only if not equipped and with cooldown to prevent flicker
+                                    if (not playerData.isFishingRodEquipped) and (tick() - lastFishEquipAt > 3) then
+                                        InventoryService:useItem(fishRodInventoryId, {use=1})
+                                        lastFishEquipAt = tick()
+                                        task.wait(0.35)
+                                    end
                                 end)
                                 if not okEquip then
                                     warn("[SeasonQuests] fish equip error:", equipErr)
                                 end
                                 
                                 while tick() < nextCheckTime and seasonQuestEnabled do
+                                    if _G.CurrentResourceQuest ~= "fish" then
+                                        break
+                                    end
+
+                                    local playerData = DataController:getData()
+                                    if playerData and (not playerData.isFishingRodEquipped) and fishRodInventoryId and (tick() - lastFishEquipAt > 3) then
+                                        local okReequip, reEquipErr = pcall(function()
+                                            InventoryService:useItem(fishRodInventoryId, {use=1})
+                                            lastFishEquipAt = tick()
+                                        end)
+                                        if not okReequip then
+                                            warn("[SeasonQuests] fish re-equip error:", reEquipErr)
+                                        end
+                                        task.wait(0.3)
+                                    end
+
                                     local ok1, err1 = pcall(function()
                                         local FishingService = Knit.GetService("FishingService")
                                         FishingService.fishRequest._re:FireServer()
@@ -948,7 +970,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     if not ok1 then
                                         warn("[SeasonQuests] fishRequest error:", err1)
                                     end
-                                    task.wait(0.15)
+                                    task.wait(0.2)
                                     
                                     local ok2, err2 = pcall(function()
                                         local FishingService = Knit.GetService("FishingService")
@@ -957,7 +979,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     if not ok2 then
                                         warn("[SeasonQuests] fishCatched error:", err2)
                                     end
-                                    task.wait(0.15)
+                                    task.wait(0.2)
                                 end
                             end))
 
