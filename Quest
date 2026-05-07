@@ -1972,7 +1972,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                         -- Hatch continuously until next check instead of just once
                                                         while tick() < nextCheckTime and seasonQuestEnabled do
                                                             Knit.GetService("EggService").openEgg._re:FireServer(eggToUse, 999)
-                                                            task.wait(_G.SmartHatchDelay or 0.6)
+                                                            task.wait(_G.SmartHatchDelay or 2.1)
                                                         end
                                                     end
                                                 end
