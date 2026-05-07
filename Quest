@@ -1230,8 +1230,12 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     local pickaxeDamage = getPickaxeDamage()
                                     local targetOreId = nil
                                     local matchAnyOre = false
+                                    local noTargetSince = 0
 
-                                    if oreQuest.type == "destroyOre" or oreQuest.type:find("destroyOre") then
+                                    -- If generic ore quest is active, always prefer it (most stable path)
+                                    if oreQuest.type == "destroyAnyOre" then
+                                        matchAnyOre = true
+                                    elseif oreQuest.type == "destroyOre" or oreQuest.type:find("destroyOre") then
                                         local currentSeason = getCurrentSeason()
                                         local seasonObj = ReplicatedStorage.Shared.List:FindFirstChild(("Season%d"):format(currentSeason))
                                         if seasonObj then
@@ -1245,18 +1249,33 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                 local playerData = DataController:getData()
                                                 local seasonKey = ("season%dQuests"):format(currentSeason)
                                                 local seasonQuestsData = playerData[seasonKey] or {}
+                                                local foundAnyOreQuest = false
                                                 for _, questSlot in pairs(seasonQuestsData) do
                                                     local questSet = QuestsModule[questSlot.questDifficulty]
                                                     local questInfo = questSet and questSet[questSlot.questId]
-                                                    if questInfo and (questInfo.quest.quest == "destroyOre" or questInfo.quest.quest:find("destroyOre")) then
-                                                        targetOreId = questInfo.quest.name
-                                                        break
+                                                    if questInfo and questInfo.quest and questInfo.quest.amount then
+                                                        local qType = questInfo.quest.quest
+                                                        local qRequired = questInfo.quest.amount or 0
+                                                        local qProgress = questSlot.progress or 0
+                                                        local isIncomplete = qProgress < qRequired
+                                                        if isIncomplete and qType == "destroyAnyOre" then
+                                                            foundAnyOreQuest = true
+                                                            break
+                                                        end
+                                                        if isIncomplete and (qType == "destroyOre" or qType:find("destroyOre")) and not targetOreId then
+                                                            targetOreId = questInfo.quest.name
+                                                        end
                                                     end
+                                                end
+                                                if foundAnyOreQuest then
+                                                    matchAnyOre = true
                                                 end
                                             end
                                         end
+                                    end
 
-                                    elseif oreQuest.type == "destroyAnyOre" then
+                                    if (not matchAnyOre) and (not targetOreId or targetOreId == "") then
+                                        -- Safety fallback: if we cannot resolve specific ore target, mine any ore.
                                         matchAnyOre = true
                                     end
 
@@ -1325,6 +1344,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                 end
                                             end
                                             if foundTargetOre and targetRoomId and targetId then
+                                                noTargetSince = 0
                                                 pcall(function()
                                                     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                                                     local orePart = targetOre.PrimaryPart or targetOre:FindFirstChildWhichIsA("BasePart")
@@ -1357,6 +1377,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                     end
                                                 end
                                                 if weakestOre and fallbackRoomId and fallbackId then
+                                                    noTargetSince = 0
                                                     pcall(function()
                                                         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                                                         local orePart = weakestOre.PrimaryPart or weakestOre:FindFirstChildWhichIsA("BasePart")
@@ -1365,6 +1386,13 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                         end
                                                     end)
                                                     OreService.damage._re:FireServer(fallbackRoomId, fallbackId)
+                                                else
+                                                    if noTargetSince == 0 then
+                                                        noTargetSince = tick()
+                                                    elseif tick() - noTargetSince > 15 then
+                                                        -- If specific ore path is stalled, force generic ore mode to avoid deadlock.
+                                                        matchAnyOre = true
+                                                    end
                                                 end
                                                 task.wait(0.25)
                                             end
