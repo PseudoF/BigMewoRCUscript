@@ -553,10 +553,12 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
     local fishRodInventoryId = nil
     local lastFishEquipAt = 0
     local resourceWatchdog = {
+        tree = {lastProgress = nil, lastChangeAt = 0},
         fish = {lastProgress = nil, lastChangeAt = 0},
         ore = {lastProgress = nil, lastChangeAt = 0},
     }
     local lastResourceRotateAt = 0
+    local oreTargetRotation = {index = 1, lastSwitchAt = 0, lastCount = 0}
 
     local CompleteQuests = CompleteQuestsSection:Toggle("AutoCompleteSeasonQuests", {
         Title = "Auto Complete Quests",
@@ -661,7 +663,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                             local meteorQuest = nil
                             local treeQuest = nil
                             local fishQuest = nil
-                            local oreQuest = nil
+                            local oreQuests = {}
                             local otherQuests = {}
 
                             for _, quest in ipairs(questsToProcess) do
@@ -679,11 +681,12 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 elseif quest.type:find("catchFish") or quest.type == "catchAnyFish" or quest.type == "catchFishRarity" then
                                     fishQuest = quest
                                 elseif quest.type:find("destroyOre") or quest.type == "destroyAnyOre" then
-                                    oreQuest = quest
+                                    table.insert(oreQuests, quest)
                                 else
                                     table.insert(otherQuests, quest)
                                 end
                             end
+                            local oreQuest = (#oreQuests > 0) and oreQuests[1] or nil
 
                             local now = tick()
 
@@ -705,8 +708,11 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 resourceWatchdog.fish.lastChangeAt = 0
                             end
 
-                            if oreQuest then
-                                local oreProgress = oreQuest.data and oreQuest.data.progress or 0
+                            if #oreQuests > 0 then
+                                local oreProgress = 0
+                                for _, oq in ipairs(oreQuests) do
+                                    oreProgress = oreProgress + ((oq.data and oq.data.progress) or 0)
+                                end
                                 if resourceWatchdog.ore.lastProgress == nil or oreProgress > resourceWatchdog.ore.lastProgress then
                                     resourceWatchdog.ore.lastProgress = oreProgress
                                     resourceWatchdog.ore.lastChangeAt = now
@@ -714,6 +720,10 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     if _G.CurrentResourceQuest == "ore" then
                                         warn("[SeasonQuests] ore stalled >120s, forcing quest rotation")
                                         _G.CurrentResourceQuest = nil
+                                        if oreTargetRotation.lastCount > 0 then
+                                            oreTargetRotation.index = (oreTargetRotation.index % oreTargetRotation.lastCount) + 1
+                                            oreTargetRotation.lastSwitchAt = tick() - 30
+                                        end
                                     end
                                     resourceWatchdog.ore.lastChangeAt = now
                                 end
@@ -722,12 +732,29 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 resourceWatchdog.ore.lastChangeAt = 0
                             end
 
+                            if treeQuest then
+                                local treeProgress = treeQuest.data and treeQuest.data.progress or 0
+                                if resourceWatchdog.tree.lastProgress == nil or treeProgress > resourceWatchdog.tree.lastProgress then
+                                    resourceWatchdog.tree.lastProgress = treeProgress
+                                    resourceWatchdog.tree.lastChangeAt = now
+                                elseif resourceWatchdog.tree.lastChangeAt > 0 and (now - resourceWatchdog.tree.lastChangeAt) > 120 then
+                                    if _G.CurrentResourceQuest == "tree" then
+                                        warn("[SeasonQuests] tree stalled >120s, forcing quest rotation")
+                                        _G.CurrentResourceQuest = nil
+                                    end
+                                    resourceWatchdog.tree.lastChangeAt = now
+                                end
+                            else
+                                resourceWatchdog.tree.lastProgress = nil
+                                resourceWatchdog.tree.lastChangeAt = 0
+                            end
+
                             -- Reset stale resource quest when it is no longer active/incomplete
                             if _G.CurrentResourceQuest == "tree" and not treeQuest then
                                 _G.CurrentResourceQuest = nil
                             elseif _G.CurrentResourceQuest == "fish" and not fishQuest then
                                 _G.CurrentResourceQuest = nil
-                            elseif _G.CurrentResourceQuest == "ore" and not oreQuest then
+                            elseif _G.CurrentResourceQuest == "ore" and #oreQuests == 0 then
                                 _G.CurrentResourceQuest = nil
                             end
 
@@ -815,18 +842,28 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                 _G.CurrentResourceQuest = "tree"
                             elseif fishQuest then
                                 _G.CurrentResourceQuest = "fish"
-                            elseif oreQuest then
+                            elseif #oreQuests > 0 then
                                 _G.CurrentResourceQuest = "ore"
                             end
                         end
 
-                        -- Fair rotation to avoid starving fish/ore over long sessions
-                        if fishQuest and oreQuest and _G.CurrentResourceQuest and (tick() - lastResourceRotateAt > 45) then
-                            if _G.CurrentResourceQuest == "fish" then
-                                _G.CurrentResourceQuest = "ore"
-                                lastResourceRotateAt = tick()
-                            elseif _G.CurrentResourceQuest == "ore" then
-                                _G.CurrentResourceQuest = "fish"
+                        -- Fair rotation across all active resource quests (tree/fish/ore)
+                        if _G.CurrentResourceQuest and (tick() - lastResourceRotateAt > 45) then
+                            local activeResources = {}
+                            if treeQuest then table.insert(activeResources, "tree") end
+                            if fishQuest then table.insert(activeResources, "fish") end
+                            if #oreQuests > 0 then table.insert(activeResources, "ore") end
+
+                            if #activeResources > 1 then
+                                local currentIndex = 1
+                                for i, name in ipairs(activeResources) do
+                                    if name == _G.CurrentResourceQuest then
+                                        currentIndex = i
+                                        break
+                                    end
+                                end
+                                local nextIndex = (currentIndex % #activeResources) + 1
+                                _G.CurrentResourceQuest = activeResources[nextIndex]
                                 lastResourceRotateAt = tick()
                             end
                         end
@@ -836,7 +873,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                             _G.CurrentResourceQuest = nil
                         elseif _G.CurrentResourceQuest == "fish" and not fishQuest then
                             _G.CurrentResourceQuest = nil
-                        elseif _G.CurrentResourceQuest == "ore" and not oreQuest then
+                        elseif _G.CurrentResourceQuest == "ore" and #oreQuests == 0 then
                             _G.CurrentResourceQuest = nil
                         end
 
@@ -1249,59 +1286,68 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                         return ok
                                     end
 
-                                    -- If generic ore quest is active, always prefer it (most stable path)
-                                    if oreQuest.type == "destroyAnyOre" then
-                                        matchAnyOre = true
-                                    elseif oreQuest.type == "destroyOre" or oreQuest.type:find("destroyOre") then
-                                        local currentSeason = getCurrentSeason()
-                                        local seasonObj = ReplicatedStorage.Shared.List:FindFirstChild(("Season%d"):format(currentSeason))
-                                        if seasonObj then
-                                            if seasonObj:IsA("Folder") then
-                                                local preferred = seasonObj:FindFirstChild("Quests")
-                                                seasonObj = preferred and preferred:IsA("ModuleScript") and preferred or seasonObj:FindFirstChildWhichIsA("ModuleScript")
-                                            end
-                                            if seasonObj and seasonObj:IsA("ModuleScript") then
-                                                local SeasonModule = require(seasonObj)
-                                                local QuestsModule = SeasonModule.Quests or SeasonModule
-                                                local playerData = DataController:getData()
-                                                local seasonKey = ("season%dQuests"):format(currentSeason)
-                                                local seasonQuestsData = playerData[seasonKey] or {}
-                                                local foundAnyOreQuest = false
-                                                for _, questSlot in pairs(seasonQuestsData) do
-                                                    local questSet = QuestsModule[questSlot.questDifficulty]
-                                                    local questInfo = questSet and questSet[questSlot.questId]
-                                                    if questInfo and questInfo.quest and questInfo.quest.amount then
-                                                        local qType = questInfo.quest.quest
-                                                        local qRequired = questInfo.quest.amount or 0
-                                                        local qProgress = questSlot.progress or 0
-                                                        local isIncomplete = qProgress < qRequired
-                                                        if isIncomplete and qType == "destroyAnyOre" then
-                                                            foundAnyOreQuest = true
-                                                            break
-                                                        end
-                                                        if isIncomplete and (qType == "destroyOre" or qType:find("destroyOre")) then
-                                                            local ratio = qRequired > 0 and (qProgress / qRequired) or 0
-                                                            table.insert(specificOreTargets, {
-                                                                oreId = questInfo.quest.name,
-                                                                ratio = ratio,
-                                                                progress = qProgress,
-                                                                required = qRequired
-                                                            })
-                                                        end
+                                    -- Resolve all active ore quests each cycle (supports random 1..N ore quests).
+                                    local currentSeason = getCurrentSeason()
+                                    local seasonObj = ReplicatedStorage.Shared.List:FindFirstChild(("Season%d"):format(currentSeason))
+                                    if seasonObj then
+                                        if seasonObj:IsA("Folder") then
+                                            local preferred = seasonObj:FindFirstChild("Quests")
+                                            seasonObj = preferred and preferred:IsA("ModuleScript") and preferred or seasonObj:FindFirstChildWhichIsA("ModuleScript")
+                                        end
+                                        if seasonObj and seasonObj:IsA("ModuleScript") then
+                                            local SeasonModule = require(seasonObj)
+                                            local QuestsModule = SeasonModule.Quests or SeasonModule
+                                            local playerData = DataController:getData()
+                                            local seasonKey = ("season%dQuests"):format(currentSeason)
+                                            local seasonQuestsData = playerData[seasonKey] or {}
+                                            local foundAnyOreQuest = false
+                                            for _, questSlot in pairs(seasonQuestsData) do
+                                                local questSet = QuestsModule[questSlot.questDifficulty]
+                                                local questInfo = questSet and questSet[questSlot.questId]
+                                                if questInfo and questInfo.quest and questInfo.quest.amount then
+                                                    local qType = questInfo.quest.quest
+                                                    local qRequired = questInfo.quest.amount or 0
+                                                    local qProgress = questSlot.progress or 0
+                                                    local isIncomplete = qProgress < qRequired
+                                                    if isIncomplete and qType == "destroyAnyOre" then
+                                                        foundAnyOreQuest = true
+                                                    end
+                                                    if isIncomplete and (qType == "destroyOre" or qType:find("destroyOre")) then
+                                                        local ratio = qRequired > 0 and (qProgress / qRequired) or 0
+                                                        table.insert(specificOreTargets, {
+                                                            oreId = questInfo.quest.name,
+                                                            ratio = ratio,
+                                                            progress = qProgress,
+                                                            required = qRequired
+                                                        })
                                                     end
                                                 end
-                                                if foundAnyOreQuest then
-                                                    matchAnyOre = true
-                                                elseif #specificOreTargets > 0 then
-                                                    table.sort(specificOreTargets, function(a, b)
-                                                        if a.ratio == b.ratio then
-                                                            return a.progress < b.progress
-                                                        end
-                                                        return a.ratio < b.ratio
-                                                    end)
-                                                    -- Pick the most behind specific ore quest (prevents starvation)
-                                                    targetOreId = specificOreTargets[1].oreId
+                                            end
+
+                                            if #specificOreTargets > 0 then
+                                                table.sort(specificOreTargets, function(a, b)
+                                                    if a.ratio == b.ratio then
+                                                        return a.progress < b.progress
+                                                    end
+                                                    return a.ratio < b.ratio
+                                                end)
+                                                local nowTick = tick()
+                                                local count = #specificOreTargets
+                                                if oreTargetRotation.lastCount ~= count then
+                                                    oreTargetRotation.index = 1
+                                                    oreTargetRotation.lastCount = count
+                                                    oreTargetRotation.lastSwitchAt = nowTick
+                                                elseif nowTick - (oreTargetRotation.lastSwitchAt or 0) > 22 then
+                                                    oreTargetRotation.index = (oreTargetRotation.index % count) + 1
+                                                    oreTargetRotation.lastSwitchAt = nowTick
                                                 end
+                                                local selected = specificOreTargets[oreTargetRotation.index] or specificOreTargets[1]
+                                                targetOreId = selected.oreId
+                                            end
+
+                                            -- Any-ore quest means we are always allowed to mine generic ores as fallback.
+                                            if foundAnyOreQuest then
+                                                matchAnyOre = true
                                             end
                                         end
                                     end
@@ -1435,7 +1481,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                 else
                                                     if noTargetSince == 0 then
                                                         noTargetSince = tick()
-                                                    elseif tick() - noTargetSince > 15 then
+                                                    elseif tick() - noTargetSince > 3 then
                                                         -- If specific ore path is stalled, force generic ore mode to avoid deadlock.
                                                         matchAnyOre = true
                                                         if tick() - lastMineRecoveryTeleportAt > 12 then
