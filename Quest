@@ -1193,6 +1193,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     local noTargetSince = 0
                                     local specificOreTargets = {}
                                     local lastMineRecoveryTeleportAt = 0
+                                    local didInitialMineTeleport = false
 
                                     local function normalizeOreKey(v)
                                         if v == nil then return "" end
@@ -1213,6 +1214,39 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                         end
 
                                         return false
+                                    end
+
+                                    local function tryTeleportToMine()
+                                        local ok = false
+                                        pcall(function()
+                                            local Maps = require(ReplicatedStorage.Shared.List.Maps)
+                                            local targetMachine = "Space Mine"
+                                            for _, mapData in pairs(Maps) do
+                                                if mapData.machines then
+                                                    for _, machine in pairs(mapData.machines) do
+                                                        if machine.name == targetMachine and machine.teleport then
+                                                            local canTeleport = true
+                                                            if machine.canTeleport then
+                                                                local pd = DataController:getData()
+                                                                canTeleport = machine.canTeleport(pd)
+                                                            end
+                                                            if canTeleport then
+                                                                local character = LocalPlayer.Character
+                                                                if character and character:FindFirstChild("HumanoidRootPart") then
+                                                                    LocalPlayer:RequestStreamAroundAsync(machine.teleport.p, 5)
+                                                                    task.wait(0.35)
+                                                                    character.HumanoidRootPart:PivotTo(machine.teleport)
+                                                                    task.wait(0.6)
+                                                                    ok = true
+                                                                end
+                                                            end
+                                                            return
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end)
+                                        return ok
                                     end
 
                                     -- If generic ore quest is active, always prefer it (most stable path)
@@ -1278,6 +1312,12 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     end
 
                                     while tick() < nextCheckTime and seasonQuestEnabled do
+                                        if not didInitialMineTeleport then
+                                            didInitialMineTeleport = true
+                                            lastMineRecoveryTeleportAt = tick()
+                                            tryTeleportToMine()
+                                        end
+
                                         local playerData = DataController:getData()
                                         if not playerData or not playerData.ores then
                                             task.wait(0.25)
@@ -1308,6 +1348,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                 end
                                             end
                                             if targetOre and targetRoomId and targetId then
+                                                noTargetSince = 0
                                                 pcall(function()
                                                     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                                                     local orePart = targetOre.PrimaryPart or targetOre:FindFirstChildWhichIsA("BasePart")
@@ -1316,6 +1357,13 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                     end
                                                 end)
                                                 OreService.damage._re:FireServer(targetRoomId, targetId)
+                                            else
+                                                if noTargetSince == 0 then
+                                                    noTargetSince = tick()
+                                                elseif tick() - noTargetSince > 8 and tick() - lastMineRecoveryTeleportAt > 12 then
+                                                    lastMineRecoveryTeleportAt = tick()
+                                                    tryTeleportToMine()
+                                                end
                                             end
                                             task.wait(0.25)
                                         else
@@ -1392,33 +1440,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                         matchAnyOre = true
                                                         if tick() - lastMineRecoveryTeleportAt > 12 then
                                                             lastMineRecoveryTeleportAt = tick()
-                                                            pcall(function()
-                                                                local Maps = require(ReplicatedStorage.Shared.List.Maps)
-                                                                local targetMachine = "Space Mine"
-                                                                for _, mapData in pairs(Maps) do
-                                                                    if mapData.machines then
-                                                                        for _, machine in pairs(mapData.machines) do
-                                                                            if machine.name == targetMachine and machine.teleport then
-                                                                                local canTeleport = true
-                                                                                if machine.canTeleport then
-                                                                                    local pd = DataController:getData()
-                                                                                    canTeleport = machine.canTeleport(pd)
-                                                                                end
-                                                                                if canTeleport then
-                                                                                    local character = LocalPlayer.Character
-                                                                                    if character and character:FindFirstChild("HumanoidRootPart") then
-                                                                                        LocalPlayer:RequestStreamAroundAsync(machine.teleport.p, 5)
-                                                                                        task.wait(0.35)
-                                                                                        character.HumanoidRootPart:PivotTo(machine.teleport)
-                                                                                        task.wait(0.6)
-                                                                                    end
-                                                                                end
-                                                                                return
-                                                                            end
-                                                                        end
-                                                                    end
-                                                                end
-                                                            end)
+                                                            tryTeleportToMine()
                                                         end
                                                     end
                                                 end
