@@ -1231,6 +1231,7 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                     local targetOreId = nil
                                     local matchAnyOre = false
                                     local noTargetSince = 0
+                                    local specificOreTargets = {}
 
                                     -- If generic ore quest is active, always prefer it (most stable path)
                                     if oreQuest.type == "destroyAnyOre" then
@@ -1262,13 +1263,28 @@ If any of these are enabled, the script won't work properly... ALSO set auto rej
                                                             foundAnyOreQuest = true
                                                             break
                                                         end
-                                                        if isIncomplete and (qType == "destroyOre" or qType:find("destroyOre")) and not targetOreId then
-                                                            targetOreId = questInfo.quest.name
+                                                        if isIncomplete and (qType == "destroyOre" or qType:find("destroyOre")) then
+                                                            local ratio = qRequired > 0 and (qProgress / qRequired) or 0
+                                                            table.insert(specificOreTargets, {
+                                                                oreId = questInfo.quest.name,
+                                                                ratio = ratio,
+                                                                progress = qProgress,
+                                                                required = qRequired
+                                                            })
                                                         end
                                                     end
                                                 end
                                                 if foundAnyOreQuest then
                                                     matchAnyOre = true
+                                                elseif #specificOreTargets > 0 then
+                                                    table.sort(specificOreTargets, function(a, b)
+                                                        if a.ratio == b.ratio then
+                                                            return a.progress < b.progress
+                                                        end
+                                                        return a.ratio < b.ratio
+                                                    end)
+                                                    -- Pick the most behind specific ore quest (prevents starvation)
+                                                    targetOreId = specificOreTargets[1].oreId
                                                 end
                                             end
                                         end
